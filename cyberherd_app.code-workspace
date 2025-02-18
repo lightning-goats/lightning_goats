@@ -1,0 +1,28 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"python.pythonPath": "/usr/bin/env python3",
+		"python.linting.pylintEnabled": true,
+		"python.formatting.provider": "black",
+		"files.autoSave": "afterDelay",
+		"editor.formatOnSave": true,
+		"[python]": {
+			"editor.insertSpaces": true,
+			"editor.tabSize": 4,
+			"editor.formatOnType": true
+		},
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/.venv": true,
+			"**/.vscode": false
+		}
+	},
+	"extensions": [
+		"ms-python.python",
+		"ms-python.vscode-pylance"
+	]
+}
