@@ -4,18 +4,27 @@ import logging
 
 # Load .env file first to get DEBUG setting
 load_dotenv()
+
+# Debug settings
 DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
 DEBUG_NOSTR = os.getenv('DEBUG_NOSTR', DEBUG).lower() == 'true'
 DEBUG_WEBSOCKET = os.getenv('DEBUG_WEBSOCKET', 'false').lower() == 'true'
 
 # Logging Configuration
 logging.basicConfig(
-    level=logging.DEBUG if DEBUG else logging.INFO,
+    level=logging.INFO,  # Changed from DEBUG to INFO as default
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
     ]
 )
+
+# Set specific loggers to different levels
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('aiosqlite').setLevel(logging.WARNING)
+logging.getLogger('websockets').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 def load_env_vars(required_vars):
@@ -107,9 +116,12 @@ config.update({
 })
 
 if DEBUG:
-    logger.debug("Running in DEBUG mode:")
-    logger.debug(f"- DEBUG_NOSTR: {DEBUG_NOSTR} (Nostr commands disabled)")
-    logger.debug(f"- DEBUG_WEBSOCKET: {DEBUG_WEBSOCKET} (WebSocket messages suppressed)")
+    # Only show important debug messages
+    logger.info("Running in DEBUG mode:")
+    if DEBUG_NOSTR:
+        logger.info("- Nostr commands (nak) disabled")
+    if DEBUG_WEBSOCKET:
+        logger.info("- WebSocket messages suppressed")
     logger.debug("nak commands and websocket messages are disabled in debug mode")
     logger.debug("Configuration loaded with:")
     logger.debug(f"MAX_HERD_SIZE: {MAX_HERD_SIZE}")

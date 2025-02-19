@@ -79,7 +79,8 @@ class MessagingService:
             return None
 
         if config['DEBUG_NOSTR']:
-            logger.debug(f"DEBUG_NOSTR mode - suppressing nak command: {command}")
+            if 'nak event' in command:  # Only log nak commands
+                logger.info(f"DEBUG_NOSTR mode - suppressed: {command}")
             return None
 
         logger.info(f"Executing command: {command}")
@@ -102,18 +103,27 @@ class MessagingService:
         spots_remaining: int = 0,
     ) -> Tuple[str, Optional[str]]:
         """Generate messages based on event type."""
+        logger.info(f"Generating message for event type: {event_type}")
+        logger.info(f"Amount: {new_amount} sats, Difference: {difference} sats")
+        
         # Generate user-friendly message
         message = await self._generate_user_message(
             event_type, new_amount, difference, cyber_herd_item, spots_remaining
         )
         
-        # Only generate Nostr command if not in debug mode
+        # Only generate Nostr command for non-informational messages and when not in debug mode
         command_output = None
-        if not config['DEBUG_NOSTR']:
+        if event_type != "interface_info" and not config['DEBUG_NOSTR']:
             command_output = await self._generate_nostr_command(
                 event_type, message, new_amount, nos_sec, cyber_herd_item
             )
+            logger.info("Nostr command generated")
+        elif event_type != "interface_info" and config['DEBUG_NOSTR']:
+            logger.info("Nostr commands disabled in DEBUG mode")
+        else:
+            logger.info("Informational message - skipping Nostr command")
 
+        logger.info(f"Generated message: {message}")
         return message, command_output
 
     async def _generate_user_message(

@@ -15,6 +15,9 @@ from dependencies import get_db, _db, _external_api, _notifier
 from services.scheduler import SchedulerService
 from services.cache_manager import CacheManager
 
+# Initialize logging
+logger = logging.getLogger(__name__)
+
 # Initialize FastAPI app
 app = FastAPI()
 
