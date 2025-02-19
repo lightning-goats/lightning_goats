@@ -81,21 +81,15 @@ class WebSocketManager:
     async def _handle_message(self, message: str) -> None:
         """Handle incoming WebSocket messages."""
         try:
-            if config['DEBUG']:
-                logger.debug(f"Received WebSocket message: {message}")
-            
             data = json.loads(message)
             
-            # Process payment data but don't broadcast the raw message
+            # Process payment data
             await self.payment_processor.process_payment(data)
             
-            if config['DEBUG']:
-                logger.debug("Successfully processed payment message")
-                
         except json.JSONDecodeError:
             logger.error(f"Failed to parse message: {message}")
         except Exception as e:
-            logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.error(f"Error handling message: {e}")
 
     async def broadcast(self, message: str) -> None:
         """Broadcast a message to all connected clients."""
