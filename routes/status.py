@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from ..services.external_api import ExternalAPIService
-from ..services.database import DatabaseService
-from ..models import SetGoatSatsData
+from services.external_api import ExternalAPIService
+from services.database import DatabaseService
+from models import SetGoatSatsData
 import logging
 
 logger = logging.getLogger(__name__)

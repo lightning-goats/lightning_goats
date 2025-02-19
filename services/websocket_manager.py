@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 import websockets
 from typing import Optional, Set
 from asyncio import Lock, Event
@@ -9,49 +10,124 @@ from websockets.exceptions import (
     ConnectionClosedOK,
     InvalidURI,
     InvalidHandshake,
+    ConnectionClosed,
 )
+from config import config
 
 logger = logging.getLogger(__name__)
 
 class WebSocketManager:
-    def __init__(self, uri: str, logger: logging.Logger, max_retries: Optional[int] = None):
+    def __init__(
+        self,
+        uri: str,
+        payment_processor,  # Add payment processor
+        logger: Optional[logging.Logger] = None
+    ):
         self.uri = uri
-        self.logger = logger
-        self.max_retries = max_retries
-        self.websocket = None
-        self.lock = Lock()
-        self.should_run = True
-        self.connected = Event()
-        self.listen_task = None
-        self._retry_count = 0
-        self.connected_clients: Set[WebSocket] = set()
+        self.payment_processor = payment_processor
+        self.logger = logger or logging.getLogger(__name__)
+        self.connection: Optional[websockets.WebSocketClientProtocol] = None
+        self.connected = False
+        self.clients: Set[WebSocket] = set()
+        self._connection_event = asyncio.Event()
+        self.logger.debug(f"WebSocketManager initialized with URI: {uri}")
 
-    # ...existing WebSocketManager methods...
+    async def connect(self) -> None:
+        """Connect to the WebSocket server."""
+        while True:
+            try:
+                self.logger.debug(f"Attempting to connect to WebSocket server: {self.uri}")
+                self.connection = await websockets.connect(self.uri)
+                self.connected = True
+                self._connection_event.set()
+                self.logger.info(f"Connected to WebSocket server: {self.uri}")
+                
+                # Keep the connection alive and handle messages
+                while True:
+                    try:
+                        message = await self.connection.recv()
+                        self.logger.debug(f"Received WebSocket message: {message}")
+                        await self._handle_message(message)
+                    except ConnectionClosed:
+                        self.logger.warning("WebSocket connection closed")
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error handling message: {e}", exc_info=True)
+                
+            except Exception as e:
+                self.logger.error(f"WebSocket connection error: {e}", exc_info=True)
+                self.connected = False
+                self._connection_event.clear()
+            
+            self.logger.debug("Waiting 5 seconds before reconnection attempt")
+            await asyncio.sleep(5)
 
-    async def broadcast(self, message: str):
-        """Send a message to all connected clients."""
-        if not message:
-            self.logger.warning("Attempted to send an empty message. Skipping.")
+    async def disconnect(self) -> None:
+        """Disconnect from the WebSocket server."""
+        if self.connection:
+            self.logger.info("Disconnecting from WebSocket server")
+            await self.connection.close()
+            self.connected = False
+            self._connection_event.clear()
+
+    async def wait_for_connection(self, timeout: Optional[float] = None) -> bool:
+        """Wait for the WebSocket connection to be established."""
+        try:
+            await asyncio.wait_for(self._connection_event.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    async def _handle_message(self, message: str) -> None:
+        """Handle incoming WebSocket messages."""
+        try:
+            if config['DEBUG']:
+                self.logger.debug(f"Processing WebSocket message: {message}")
+            
+            data = json.loads(message)
+            # Process payment data first
+            await self.payment_processor.process_payment(data)
+            
+            # Then broadcast to clients if needed
+            await self.broadcast(message)
+            
+            if config['DEBUG']:
+                self.logger.debug("Successfully processed and broadcasted message")
+        except json.JSONDecodeError:
+            self.logger.error(f"Failed to parse message: {message}")
+        except Exception as e:
+            self.logger.error(f"Error handling message: {e}", exc_info=True)
+
+    async def broadcast(self, message: str) -> None:
+        """Broadcast a message to all connected clients."""
+        if config['DEBUG']:
+            self.logger.debug(f"DEBUG mode - suppressing broadcast message: {message}")
             return
 
-        if self.connected_clients:
-            self.logger.info(f"Broadcasting message to {len(self.connected_clients)} clients: {message}")
-            for client in self.connected_clients.copy():
-                try:
-                    await client.send_text(message)
-                except Exception as e:
-                    self.logger.warning(f"Failed to send message to client: {e}")
-                    self.connected_clients.remove(client)
-        else:
-            self.logger.debug("No connected clients to send messages to.")
+        if not self.clients:
+            self.logger.debug("No clients connected to broadcast message")
+            return
 
-    async def add_client(self, websocket: WebSocket):
-        """Add a new WebSocket client."""
-        await websocket.accept()
-        self.connected_clients.add(websocket)
-        self.logger.info(f"Client connected. Total clients: {len(self.connected_clients)}")
+        self.logger.debug(f"Broadcasting message to {len(self.clients)} clients: {message}")
+        failed_clients = []
+        for client in self.clients.copy():
+            try:
+                await client.send_text(message)
+            except Exception as e:
+                self.logger.error(f"Error broadcasting to client: {e}", exc_info=True)
+                failed_clients.append(client)
 
-    def remove_client(self, websocket: WebSocket):
-        """Remove a WebSocket client."""
-        self.connected_clients.remove(websocket)
-        self.logger.info(f"Client disconnected. Total clients: {len(self.connected_clients)}")
+        # Remove failed clients
+        for client in failed_clients:
+            self.clients.remove(client)
+            self.logger.debug(f"Removed failed client, remaining clients: {len(self.clients)}")
+
+    async def register(self, websocket: WebSocket) -> None:
+        """Register a new client connection."""
+        self.clients.add(websocket)
+        self.logger.info(f"Client connected. Total clients: {len(self.clients)}")
+
+    async def unregister(self, websocket: WebSocket) -> None:
+        """Unregister a client connection."""
+        self.clients.remove(websocket)
+        self.logger.info(f"Client disconnected. Total clients: {len(self.clients)}")

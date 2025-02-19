@@ -1,11 +1,5 @@
 from pydantic import BaseModel, validator
-from typing import List, Optional, Dict, Set, Union
-from datetime import datetime
-
-class HookData(BaseModel):
-    payment_hash: str
-    description: Optional[str] = None
-    amount: Optional[float] = 0
+from typing import List, Optional
 
 class CyberHerdData(BaseModel):
     display_name: Optional[str] = 'Anon'

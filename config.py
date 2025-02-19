@@ -2,9 +2,13 @@ from dotenv import load_dotenv
 import os
 import logging
 
+# Load .env file first to get DEBUG setting
+load_dotenv()
+DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
+
 # Logging Configuration
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG if DEBUG else logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
@@ -27,12 +31,12 @@ REQUIRED_ENV_VARS = [
 ]
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///cyberherd.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./lightning_goats.db")
 
 # Constants
-MAX_HERD_SIZE = int(os.getenv('MAX_HERD_SIZE', 10))
+MAX_HERD_SIZE = 100
 PREDEFINED_WALLET_PERCENT_RESET = 100
-TRIGGER_AMOUNT_SATS = 1000
+TRIGGER_AMOUNT_SATS = 10
 
 # Goat names and profiles configuration
 GOAT_NAMES_DICT = {
@@ -73,3 +77,27 @@ try:
 except ValueError as e:
     logger.error(f"Configuration error: {e}")
     raise
+
+config.update({
+    'DATABASE_URL': DATABASE_URL,
+    'OH_AUTH_1': os.getenv('OH_AUTH_1'),
+    'HERD_WALLET': os.getenv('HERD_WALLET'),
+    'HERD_KEY': os.getenv('HERD_KEY'),
+    'SAT_KEY': os.getenv('SAT_KEY'),
+    'CYBERHERD_KEY': os.getenv('CYBERHERD_KEY'),
+    'NOS_SEC': os.getenv('NOS_SEC'),
+    'HEX_KEY': os.getenv('HEX_KEY'),
+    'LNBITS_URL': os.getenv('LNBITS_URL'),
+    'OPENHAB_URL': os.getenv('OPENHAB_URL'),
+    'HERD_WEBSOCKET': os.getenv('HERD_WEBSOCKET'),
+    'PREDEFINED_WALLET_ADDRESS': os.getenv('PREDEFINED_WALLET_ADDRESS'),
+    'PREDEFINED_WALLET_ALIAS': os.getenv('PREDEFINED_WALLET_ALIAS'),
+    'MAX_CONCURRENT_SUBPROCESSES': int(os.getenv('MAX_CONCURRENT_SUBPROCESSES', 10)),
+    'MAX_CONCURRENT_HTTP_REQUESTS': int(os.getenv('MAX_CONCURRENT_HTTP_REQUESTS', 20)),
+    'NIP05_VERIFICATION': os.getenv('NIP05_VERIFICATION', 'true').lower() == 'true',
+    'DEBUG': DEBUG
+})
+
+if DEBUG:
+    logger.debug("Running in DEBUG mode - debug logging enabled")
+    logger.debug("nak commands and websocket messages are disabled in debug mode")

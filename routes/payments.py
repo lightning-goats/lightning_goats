@@ -1,16 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends
-from ..services.external_api import ExternalAPIService
-from ..services.database import DatabaseService
-from ..config import config, TRIGGER_AMOUNT_SATS
-from ..models import PaymentRequest, HookData
-from ..services.cyberherd_manager import CyberHerdManager
+from dependencies import get_external_api, get_cyberherd_manager
+from services.external_api import ExternalAPIService
+from config import config, TRIGGER_AMOUNT_SATS
+from models import PaymentRequest, CyberHerdTreats
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/payment")
-async def create_payment(payment: PaymentRequest, external_api: ExternalAPIService = Depends()):
+async def create_payment(
+    payment: PaymentRequest,
+    external_api = Depends(get_external_api)
+):
     """Create a new Lightning payment invoice."""
     try:
         invoice = await external_api.create_invoice(
@@ -29,7 +31,10 @@ async def get_trigger_amount():
     return {"trigger_amount": TRIGGER_AMOUNT_SATS}
 
 @router.get("/convert/{amount}")
-async def convert_usd_to_sats(amount: float, external_api: ExternalAPIService = Depends()):
+async def convert_usd_to_sats(
+    amount: float,
+    external_api = Depends(get_external_api)  # Update to use dependency
+):
     """Convert USD amount to satoshis."""
     try:
         sats = await external_api.convert_to_sats(amount)
@@ -39,7 +44,10 @@ async def convert_usd_to_sats(amount: float, external_api: ExternalAPIService = 
         raise HTTPException(status_code=500, detail="Conversion failed")
 
 @router.get("/balance")
-async def get_balance(force_refresh: bool = False, external_api: ExternalAPIService = Depends()):
+async def get_balance(
+    force_refresh: bool = False,
+    external_api = Depends(get_external_api)  # Update to use dependency
+):
     """Get current wallet balance."""
     try:
         balance = await external_api.get_balance(force_refresh)
@@ -49,7 +57,9 @@ async def get_balance(force_refresh: bool = False, external_api: ExternalAPIServ
         raise HTTPException(status_code=500, detail="Failed to get balance")
 
 @router.post("/reset")
-async def reset_wallet(external_api: ExternalAPIService = Depends()):
+async def reset_wallet(
+    external_api = Depends(get_external_api)  # Update to use dependency
+):
     """Reset wallet by sending remaining balance."""
     try:
         balance = await external_api.get_balance(force_refresh=True)
@@ -71,13 +81,20 @@ async def reset_wallet(external_api: ExternalAPIService = Depends()):
 
 @router.post("/hook")
 async def payment_hook(
-    hook_data: HookData,
-    manager: CyberHerdManager = Depends()
+    payment_data: dict,
+    manager = Depends(get_cyberherd_manager)
 ):
     """Handle incoming payment data from webhook."""
     try:
-        await manager.process_payment_data(hook_data)
+        if config['DEBUG']:
+            logger.debug(f"Received webhook data: {payment_data}")
+            
+        await manager.process_payment_data(payment_data)
+        
+        if config['DEBUG']:
+            logger.debug("Successfully processed payment hook")
+            
         return {"status": "success"}
     except Exception as e:
-        logger.error(f"Error processing payment hook: {e}")
+        logger.error(f"Error processing payment hook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process payment hook")

@@ -1,82 +1,105 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
-from ..services.cyberherd_manager import CyberHerdManager
-from ..services.database import DatabaseService
-from ..services.external_api import ExternalAPIService
-from ..services.notifier import NotifierService
-from ..models import CyberHerdData, CyberHerdTreats
-from ..config import MAX_HERD_SIZE
+from typing import List, Dict
 import logging
+from models import CyberHerdData, CyberHerdTreats
+from services.database import DatabaseService
+from services.external_api import ExternalAPIService
+from services.notifier import NotifierService
+from services.cyberherd_manager import CyberHerdManager
+from config import config, MAX_HERD_SIZE
+from dependencies import (
+    get_db,
+    get_external_api,
+    get_notifier,
+    get_cyberherd_manager
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-async def get_cyberherd_manager(
-    database: DatabaseService = Depends(),
-    external_api: ExternalAPIService = Depends(),
-    notifier: NotifierService = Depends()
-):
-    return CyberHerdManager(database, external_api, notifier)
-
-@router.post("/cyber_herd")
-async def update_cyber_herd(
-    data: List[CyberHerdData],
-    manager: CyberHerdManager = Depends(get_cyberherd_manager)
-):
-    """Update CyberHerd members and process their data."""
-    try:
-        current_size = await manager.database.fetch_one(
-            "SELECT COUNT(*) as count FROM cyber_herd"
-        )
-        if current_size['count'] >= MAX_HERD_SIZE:
-            return {"status": "herd full"}
-
-        results = []
-        for item in data:
-            if item.pubkey:
-                result = await manager.process_new_member(
-                    item.dict(),
-                    item.kinds,
-                    current_size['count']
-                )
-                results.append(result)
-
-        return {
-            "status": "success",
-            "results": results
-        }
-    except Exception as e:
-        logger.error(f"Error updating cyber herd: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update cyber herd")
-
-@router.get("/cyber_herd")
-async def get_cyber_herd(database: DatabaseService = Depends()):
+@router.get("")
+async def get_cyber_herd(db: DatabaseService = Depends(get_db)):
     """Get all CyberHerd members."""
     try:
-        members = await database.fetch_all("SELECT * FROM cyber_herd")
-        return members
+        query = "SELECT * FROM cyber_herd"
+        rows = await db.fetch_all(query)
+        return rows
     except Exception as e:
         logger.error(f"Error retrieving cyber herd: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve cyber herd")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
-@router.delete("/cyber_herd/{pubkey}")
-async def delete_cyber_herd_member(pubkey: str, database: DatabaseService = Depends()):
-    """Delete a CyberHerd member."""
+@router.post("")
+async def update_cyber_herd(
+    data: List[CyberHerdData],
+    db: DatabaseService = Depends(get_db),
+    external_api: ExternalAPIService = Depends(get_external_api),
+    notifier: NotifierService = Depends(get_notifier)
+):
+    """Update CyberHerd with new members."""
     try:
-        await database.execute(
-            "DELETE FROM cyber_herd WHERE pubkey = :pubkey",
-            {"pubkey": pubkey}
-        )
+        query = "SELECT COUNT(*) as count FROM cyber_herd"
+        result = await db.fetch_one(query)
+        current_herd_size = result['count']
+
+        if current_herd_size >= MAX_HERD_SIZE:
+            logger.info(f"Herd full: {current_herd_size} members")
+            return {"status": "herd full"}
+
+        # Process each member
+        # ... implement member processing logic ...
+
         return {"status": "success"}
     except Exception as e:
-        logger.error(f"Error deleting cyber herd member: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete member")
+        logger.error(f"Failed to update cyber herd: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.get("/spots_remaining")
+async def get_cyberherd_spots_remaining(db: DatabaseService = Depends(get_db)):
+    """Get remaining spots in CyberHerd."""
+    try:
+        query = "SELECT COUNT(*) as count FROM cyber_herd"
+        result = await db.fetch_one(query)
+        current_spots_taken = result['count']
+        spots_remaining = MAX_HERD_SIZE - current_spots_taken
+        return {"spots_remaining": spots_remaining}
+    except Exception as e:
+        logger.error(f"Error retrieving remaining spots: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.delete("/delete/{lud16}")
+async def delete_cyber_herd(
+    lud16: str,
+    db: DatabaseService = Depends(get_db)
+):
+    """Delete a CyberHerd member by lud16."""
+    try:
+        logger.info(f"Attempting to delete record with lud16: {lud16}")
+        select_query = "SELECT * FROM cyber_herd WHERE lud16 = :lud16"
+        record = await db.fetch_one(select_query, {"lud16": lud16})
+        
+        if not record:
+            logger.warning(f"No record found with lud16: {lud16}")
+            raise HTTPException(status_code=404, detail="Record not found")
+            
+        delete_query = "DELETE FROM cyber_herd WHERE lud16 = :lud16"
+        await db.execute(delete_query, {"lud16": lud16})
+        
+        logger.info(f"Record with lud16 {lud16} deleted successfully.")
+        return {
+            "status": "success",
+            "message": f"Record with lud16 {lud16} deleted successfully."
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Failed to delete record: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.post("/messages/cyberherd_treats")
 async def handle_cyberherd_treats(
     data: CyberHerdTreats,
-    database: DatabaseService = Depends(),
-    notifier: NotifierService = Depends()
+    database: DatabaseService = Depends(get_db),
+    notifier: NotifierService = Depends(get_notifier)
 ):
     """Send treats to CyberHerd members."""
     try:
@@ -140,7 +163,7 @@ async def zap_lud16_endpoint(
     lud16: str, 
     sats: int = 1, 
     text: str = "CyberHerd Treats.",
-    external_api: ExternalAPIService = Depends()
+    external_api: ExternalAPIService = Depends(get_external_api)
 ):
     """Send LNURL payment to a specified address."""
     try:

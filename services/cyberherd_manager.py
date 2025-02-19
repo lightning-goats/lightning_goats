@@ -1,12 +1,9 @@
 import logging
 from typing import List, Dict, Optional, Tuple
-from .database import DatabaseService
-from .external_api import ExternalAPIService
-from .notifier import NotifierService
-from ..config import config, MAX_HERD_SIZE
-from datetime import datetime, timedelta
-import asyncio
-from ..models import HookData
+from services.database import DatabaseService
+from services.external_api import ExternalAPIService
+from services.notifier import NotifierService
+from config import config, MAX_HERD_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -156,24 +153,36 @@ class CyberHerdManager:
             logger.error(f"Failed to send payment: {e}")
             return {"success": False, "message": str(e)}
 
-    async def process_payment_data(self, hook_data: HookData):
+    async def process_payment_data(self, payment_data: Dict):
         """Process incoming payment data from webhook."""
+        if config['DEBUG']:
+            logger.debug(f"Processing payment data in DEBUG mode: {payment_data}")
+        
         try:
-            payment_hash = hook_data.payment_hash
-            description = hook_data.description
-            amount = hook_data.amount
+            payment_hash = payment_data.get('payment_hash')
+            description = payment_data.get('description')
+            amount = payment_data.get('amount', 0)
+
+            logger.debug(f"Payment details - hash: {payment_hash}, desc: {description}, amount: {amount}")
 
             # Fetch member by payment_hash
+            query = "SELECT * FROM cyber_herd WHERE event_id = :payment_hash"
+            logger.debug(f"Executing query: {query} with payment_hash: {payment_hash}")
+            
             member = await self.database.fetch_one(
-                "SELECT * FROM cyber_herd WHERE event_id = :payment_hash",
+                query,
                 {"payment_hash": payment_hash}
             )
 
             if member:
+                logger.debug(f"Found member for payment_hash {payment_hash}: {member}")
+                
                 # Update notified field
+                logger.debug(f"Updating notified field for pubkey: {member['pubkey']}")
                 await self.database.update_notified_field(member["pubkey"], "success")
 
                 # Send notification
+                logger.debug(f"Sending notification for amount: {amount}")
                 await self.notifier.send_sats_received_notification(
                     sats_received=int(amount),
                     difference=0  # You might want to calculate this
@@ -182,5 +191,5 @@ class CyberHerdManager:
                 logger.warning(f"No CyberHerd member found with payment_hash: {payment_hash}")
 
         except Exception as e:
-            logger.error(f"Error processing payment data: {e}")
+            logger.error(f"Error processing payment data: {e}", exc_info=True)
             raise

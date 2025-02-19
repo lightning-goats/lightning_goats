@@ -5,7 +5,7 @@ import hashlib
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 from ecdsa.util import sigdecode_string, sigencode_string_canonize
 import logging
-from ..config import DEFAULT_RELAYS
+from config import DEFAULT_RELAYS
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,9 @@ def compute_event_hash(serialized_event: bytes) -> bytes:
     Compute the SHA-256 hash of the serialized event.
     """
     return hashlib.sha256(serialized_event).digest()
+
+# Add alias for backward compatibility
+get_event_hash = compute_event_hash
 
 def sign_event_hash(event_hash: bytes, private_key_hex: str) -> str:
     """

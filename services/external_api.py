@@ -1,10 +1,10 @@
-import logging
 import httpx
-from typing import Optional, Dict, Any, List
-from tenacity import retry, stop_after_attempt, wait_exponential
-from ..config import config
+import logging
 import json
-from ..utils.nostr_signing import sign_zap_event, sign_event, build_zap_event
+from typing import Optional, Dict, Any, List
+from config import config  # Change from relative to absolute import
+from tenacity import retry, stop_after_attempt, wait_exponential
+from utils.nostr_signing import sign_zap_event, sign_event, build_zap_event
 
 logger = logging.getLogger(__name__)
 

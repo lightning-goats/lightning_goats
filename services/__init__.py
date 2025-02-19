@@ -1,15 +1,14 @@
-from .database import DatabaseService
-from .external_api import ExternalAPIService
-from .websocket_manager import WebSocketManager
-from .notifier import NotifierService
-from .cyberherd_manager import CyberHerdManager
-from .messaging_service import MessagingService
+"""Services package."""
+from services.database import DatabaseService
+from services.external_api import ExternalAPIService
+from services.websocket_manager import WebSocketManager
+from services.cyberherd_manager import CyberHerdManager
+from services.notifier import NotifierService
 
 __all__ = [
     'DatabaseService',
     'ExternalAPIService',
     'WebSocketManager',
-    'NotifierService',
     'CyberHerdManager',
-    'MessagingService'
+    'NotifierService'
 ]

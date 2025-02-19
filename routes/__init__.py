@@ -1,8 +1,10 @@
+"""Routes package."""
 from fastapi import APIRouter
-from .payments import router as payments_router
-from .cyberherd import router as cyberherd_router
-from .status import router as status_router
-from .websocket import router as websocket_router
+
+from routes.payments import router as payments_router
+from routes.cyberherd import router as cyberherd_router
+from routes.status import router as status_router
+from routes.websocket import router as websocket_router  # Using absolute import
 
 # Create main router
 main_router = APIRouter()

@@ -1,32 +1,39 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from ..services.websocket_manager import WebSocketManager
-from ..config import config
+from fastapi import APIRouter, WebSocket, Depends
+from services.websocket_manager import WebSocketManager
+from services.payment_processor import PaymentProcessor
+from services.messaging_service import MessagingService
 import logging
 import asyncio
 import random
-from ..services.messaging_service import MessagingService
+from config import config
+from dependencies import _external_api, _notifier, _db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Initialize WebSocket manager
+# Initialize services
+payment_processor = PaymentProcessor(_external_api, _notifier, _db)
+
+# Initialize WebSocket manager with payment processor
 websocket_manager = WebSocketManager(
     uri=config['HERD_WEBSOCKET'],
+    payment_processor=payment_processor,
     logger=logger
 )
 
-@router.websocket("/ws/")
+@router.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
-    """Handle WebSocket connections."""
-    await websocket_manager.add_client(websocket)
+    """WebSocket endpoint for client connections."""
+    await websocket.accept()
     try:
+        await websocket_manager.register(websocket)
         while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        websocket_manager.remove_client(websocket)
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Message received: {data}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        websocket_manager.remove_client(websocket)
+    finally:
+        await websocket_manager.unregister(websocket)
 
 @router.get("/ws")
 async def get_ws_info():
@@ -47,7 +54,7 @@ async def periodic_informational_messages():
             )
             await websocket_manager.broadcast(message)
 
-# Add startup event handler
+# Start periodic messages
 @router.on_event("startup")
 async def start_periodic_messages():
     asyncio.create_task(periodic_informational_messages())

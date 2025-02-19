@@ -3,9 +3,9 @@ import random
 import logging
 import json
 from typing import Tuple, Dict, Any, Optional, List
-from ..config import config, GOAT_NAMES_DICT, DEFAULT_RELAYS
-from ..utils.cyberherd_module import run_subprocess
-from .message_templates import (
+from config import config, GOAT_NAMES_DICT, DEFAULT_RELAYS
+from utils.cyberherd_module import run_subprocess
+from services.message_templates import (
     sats_received_dict,
     feeder_trigger_dict,
     variations,
@@ -15,6 +15,7 @@ from .message_templates import (
     cyber_herd_treats_dict,
     interface_info_dict
 )
+from utils.nostr_signing import sign_event
 
 logger = logging.getLogger(__name__)
 
@@ -31,41 +32,6 @@ class MessagingService:
     def __init__(self):
         self.notified = {}
         self.goat_names = GOAT_NAMES_DICT
-
-    async def make_messages(
-        self,
-        nos_sec: str,
-        new_amount: float,
-        difference: float,
-        event_type: str,
-        cyber_herd_item: Dict = None,
-        spots_remaining: int = 0,
-    ) -> Tuple[str, Optional[str]]:
-        """Generate appropriate messages based on event type."""
-        message_templates = self.MESSAGE_TYPES.get(event_type)
-        if not message_templates:
-            logger.error(f"Event type '{event_type}' not recognized.")
-            return "Event type not recognized.", None
-
-        template = random.choice(list(message_templates.values()))
-        
-        handlers = {
-            "cyber_herd": self._handle_cyber_herd_message,
-            "cyber_herd_treats": self._handle_treats_message,
-        }
-
-        if event_type in ["sats_received", "feeder_triggered"]:
-            return await self._handle_regular_message(template, new_amount, difference)
-        elif event_type in handlers:
-            return await handlers[event_type](
-                template=template,
-                cyber_herd_item=cyber_herd_item,
-                new_amount=new_amount if event_type == "cyber_herd_treats" else None,
-                difference=difference,
-                spots_remaining=spots_remaining
-            )
-        else:
-            return template.format(new_amount=0, goat_name="", difference_message=""), None
 
     def _get_thanks_part(self, amount: int) -> str:
         """Get a random thank you message."""
@@ -106,6 +72,60 @@ class MessagingService:
         elif len(items) == 1:
             return items[0]
         return ''
+
+    async def _execute_command(self, command: str) -> Optional[str]:
+        """Execute a shell command and return the output."""
+        if not command:
+            return None
+
+        if config['DEBUG']:
+            logger.debug(f"DEBUG mode - suppressing nak command: {command}")
+            return None
+
+        logger.info(f"Executing command: {command}")
+        result = await run_subprocess(command.split())
+        
+        if result.returncode != 0:
+            logger.error(f"Command failed: {result.stderr.decode()}")
+            return result.stderr.decode()
+        
+        logger.info(f"Command succeeded: {result.stdout.decode()}")
+        return result.stdout.decode()
+
+    async def make_messages(
+        self,
+        nos_sec: str,
+        new_amount: float,
+        difference: float,
+        event_type: str,
+        cyber_herd_item: Dict = None,
+        spots_remaining: int = 0,
+    ) -> Tuple[str, Optional[str]]:
+        """Generate appropriate messages based on event type."""
+        message_templates = self.MESSAGE_TYPES.get(event_type)
+        if not message_templates:
+            logger.error(f"Event type '{event_type}' not recognized.")
+            return "Event type not recognized.", None
+
+        template = random.choice(list(message_templates.values()))
+        
+        handlers = {
+            "cyber_herd": self._handle_cyber_herd_message,
+            "cyber_herd_treats": self._handle_treats_message,
+        }
+
+        if event_type in ["sats_received", "feeder_triggered"]:
+            return await self._handle_regular_message(template, new_amount, difference)
+        elif event_type in handlers:
+            return await handlers[event_type](
+                template=template,
+                cyber_herd_item=cyber_herd_item,
+                new_amount=new_amount if event_type == "cyber_herd_treats" else None,
+                difference=difference,
+                spots_remaining=spots_remaining
+            )
+        else:
+            return template.format(new_amount=0, goat_name="", difference_message=""), None
 
     async def _handle_regular_message(
         self,
@@ -219,23 +239,54 @@ class MessagingService:
         self.notified = {}
         logger.info("Message service cleaned up")
 
-    async def _execute_command(self, command: str) -> Optional[str]:
-        """Execute a shell command and return the output."""
-        if not command:
-            return None
-
-        logger.info(f"Executing command: {command}")
-        result = await run_subprocess(command.split())
-        
-        if result.returncode != 0:
-            logger.error(f"Command failed: {result.stderr.decode()}")
-            return result.stderr.decode()
-        
-        logger.info(f"Command succeeded: {result.stdout.decode()}")
-        return result.stdout.decode()
-
     @classmethod
     async def make_messages_compat(cls, *args, **kwargs) -> Tuple[str, Optional[str]]:
         """Compatibility method for old messaging.py make_messages function."""
         instance = cls()
         return await instance.make_messages(*args, **kwargs)
+
+async def make_messages(
+    private_key: str,
+    amount: int,
+    difference: int,
+    message_type: str,
+    member_data: Optional[Dict] = None,
+    spots_remaining: Optional[int] = None
+) -> Tuple[str, Optional[str]]:
+    """Generate notification messages based on type."""
+    
+    message_content = {
+        "type": message_type,
+        "amount": amount,
+        "difference": difference
+    }
+
+    if message_type == "cyber_herd" and member_data:
+        message_content.update({
+            "member": member_data,
+            "spots_remaining": spots_remaining
+        })
+
+    # Convert to JSON string
+    message = json.dumps(message_content)
+
+    # Sign the event if we have a private key
+    if private_key:
+        try:
+            signed_event = await sign_event(
+                {
+                    "content": message,
+                    "kind": 1,
+                    "created_at": int(time.time()),
+                    "tags": [],
+                    "pubkey": ""  # Will be derived from private key
+                },
+                private_key
+            )
+            raw_command_output = json.dumps(signed_event)
+            return message, raw_command_output
+        except Exception as e:
+            logger.error(f"Error signing event: {e}")
+            return message, None
+
+    return message, None

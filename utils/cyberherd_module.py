@@ -1,10 +1,12 @@
-import asyncio
 import json
 import logging
-import re
-from typing import Optional, Dict, Any
+import asyncio
+from typing import List, Dict, Optional
 import httpx
-from ..config import config, DEFAULT_RELAYS
+
+from config import config, DEFAULT_RELAYS
+from utils.nostr_signing import sign_event, compute_event_hash  # Changed from get_event_hash
+from utils.relay_manager import RelayManager
 
 logger = logging.getLogger(__name__)
 
