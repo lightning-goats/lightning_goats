@@ -4,23 +4,28 @@ from services.external_api import ExternalAPIService
 from config import config, TRIGGER_AMOUNT_SATS
 from models import PaymentRequest, CyberHerdTreats
 import logging
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/payment")
+class PaymentCreate(BaseModel):
+    amount: int
+    memo: str = "Lightning Goats Payment"
+
+@router.post("")
 async def create_payment(
-    payment: PaymentRequest,
-    external_api = Depends(get_external_api)
+    payment: PaymentCreate,
+    external_api: ExternalAPIService = Depends(get_external_api)
 ):
-    """Create a new Lightning payment invoice."""
+    """Create a new payment invoice."""
     try:
-        invoice = await external_api.create_invoice(
-            amount=payment.balance,
-            memo="Lightning Goats Payment",
+        payment_request = await external_api.create_invoice(
+            amount=payment.amount,
+            memo=payment.memo,
             key=config['HERD_KEY']
         )
-        return {"payment_request": invoice}
+        return {"payment_request": payment_request}
     except Exception as e:
         logger.error(f"Error creating payment: {e}")
         raise HTTPException(status_code=500, detail="Failed to create payment")
@@ -33,7 +38,7 @@ async def get_trigger_amount():
 @router.get("/convert/{amount}")
 async def convert_usd_to_sats(
     amount: float,
-    external_api = Depends(get_external_api)  # Update to use dependency
+    external_api: ExternalAPIService = Depends(get_external_api)
 ):
     """Convert USD amount to satoshis."""
     try:

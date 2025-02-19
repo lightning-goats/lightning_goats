@@ -17,7 +17,7 @@ from routes.debug import router as debug_router
 # Create main router
 main_router = APIRouter()
 
-# Include all routers with their prefixes
+# Mount routers with correct prefixes
 main_router.include_router(payments_router, prefix="/payment", tags=["payments"])
 main_router.include_router(cyberherd_router, prefix="/cyberherd", tags=["cyberherd"])
 main_router.include_router(status_router, prefix="/status", tags=["status"])
@@ -29,7 +29,11 @@ main_router.include_router(conversion_router, prefix="/convert", tags=["conversi
 
 # Include debug router only in DEBUG mode
 if config['DEBUG']:
-    main_router.include_router(debug_router, prefix="/debug", tags=["debug"])
+    main_router.include_router(
+        debug_router, 
+        prefix="/debug", 
+        tags=["debug"]
+    )
 
 # Add root-level routes
 @main_router.get("/balance")

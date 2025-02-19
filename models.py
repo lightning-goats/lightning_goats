@@ -2,11 +2,12 @@ from pydantic import BaseModel, validator
 from typing import List, Optional
 
 class CyberHerdData(BaseModel):
-    display_name: Optional[str] = 'Anon'
+    """CyberHerd member data model."""
+    pubkey: str
+    display_name: Optional[str] = "Anon"
     event_id: str
     note: str
-    kinds: List[int] = []
-    pubkey: str
+    kinds: str
     nprofile: str
     lud16: str
     notified: Optional[str] = None
@@ -14,13 +15,18 @@ class CyberHerdData(BaseModel):
     amount: Optional[int] = 0
     picture: Optional[str] = None
 
-    class Config:
-        extra = 'ignore'
-        
     @validator('lud16')
     def validate_lud16(cls, v):
-        if '@' not in v:
-            raise ValueError('Invalid lud16 format')
+        """Validate lightning address format."""
+        if not '@' in v:
+            raise ValueError('Lightning address must be in format username@domain')
+        return v
+
+    @validator('payouts')
+    def validate_payouts(cls, v):
+        """Validate payout value."""
+        if not 0 <= v <= 1.0:
+            raise ValueError('Payouts must be between 0 and 1.0')
         return v
 
 class CyberHerdTreats(BaseModel):

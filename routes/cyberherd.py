@@ -18,15 +18,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("")
-async def get_cyber_herd(db: DatabaseService = Depends(get_db)):
-    """Get all CyberHerd members."""
+async def get_cyber_herd(
+    external_api: ExternalAPIService = Depends(get_external_api)
+):
+    """Get list of current CyberHerd members."""
     try:
-        query = "SELECT * FROM cyber_herd"
-        rows = await db.fetch_all(query)
-        return rows
+        members = await external_api.fetch_cyberherd_targets()
+        return {"members": members}
     except Exception as e:
-        logger.error(f"Error retrieving cyber herd: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        logger.error(f"Error getting CyberHerd members: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get CyberHerd members")
 
 @router.post("")
 async def update_cyber_herd(
@@ -181,3 +182,18 @@ async def zap_lud16_endpoint(
     except Exception as e:
         logger.error(f"Error making LNURL payment: {e}")
         raise HTTPException(status_code=500, detail="Failed to make LNURL payment")
+
+@router.get("/list")
+async def list_cyberherd_members(
+    external_api: ExternalAPIService = Depends(get_external_api)
+):
+    """Get list of current CyberHerd members."""
+    members = await external_api.fetch_cyberherd_targets()
+    return {"members": members}
+
+@router.get("/spots")
+async def get_spots_remaining():
+    """Get remaining spots in CyberHerd."""
+    from config import MAX_HERD_SIZE
+    # For now, just return max size since we don't track current members
+    return {"spots_remaining": MAX_HERD_SIZE}

@@ -1,14 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends
 from services.external_api import ExternalAPIService
 from services.database import DatabaseService
+from dependencies import get_external_api, get_db  # Add this import
 from models import SetGoatSatsData
+from config import MAX_HERD_SIZE, TRIGGER_AMOUNT_SATS  # Add TRIGGER_AMOUNT_SATS import
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("/feeder_status")
-async def get_feeder_status(external_api: ExternalAPIService = Depends()):
+@router.get("/feeder")
+async def get_feeder_status(
+    external_api: ExternalAPIService = Depends(get_external_api)  # Fix dependency
+):
     """Check if feeder override is enabled."""
     try:
         status = await external_api.get_feeder_status()
@@ -62,7 +66,9 @@ async def get_goat_feedings(external_api: ExternalAPIService = Depends()):
         raise HTTPException(status_code=500, detail="Failed to get goat feedings")
 
 @router.get("/cyberherd/spots_remaining")
-async def get_cyberherd_spots(database: DatabaseService = Depends()):
+async def get_cyberherd_spots(
+    database: DatabaseService = Depends(get_db)  # Fix dependency
+):
     """Get remaining spots in the CyberHerd."""
     try:
         result = await database.fetch_one(
@@ -73,3 +79,8 @@ async def get_cyberherd_spots(database: DatabaseService = Depends()):
     except Exception as e:
         logger.error(f"Error getting spots remaining: {e}")
         raise HTTPException(status_code=500, detail="Failed to get spots remaining")
+
+@router.get("/trigger")
+async def get_trigger_amount():
+    """Get amount of sats needed to trigger feeder."""
+    return {"trigger_amount": TRIGGER_AMOUNT_SATS}
