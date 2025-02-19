@@ -36,31 +36,29 @@ class WebSocketManager:
         """Connect to the WebSocket server."""
         while True:
             try:
-                self.logger.debug(f"Attempting to connect to WebSocket server: {self.uri}")
+                logger.info(f"Connecting to WebSocket server...")
                 self.connection = await websockets.connect(self.uri)
                 self.connected = True
                 self._connection_event.set()
-                self.logger.info(f"Connected to WebSocket server: {self.uri}")
+                logger.info("✅ WebSocket connection established")
                 
-                # Keep the connection alive and handle messages
                 while True:
                     try:
                         message = await self.connection.recv()
-                        self.logger.debug(f"Received WebSocket message: {message}")
                         await self._handle_message(message)
                     except ConnectionClosed:
-                        self.logger.warning("WebSocket connection closed")
+                        logger.warning("⚠️ WebSocket connection closed")
                         break
                     except Exception as e:
-                        self.logger.error(f"Error handling message: {e}", exc_info=True)
+                        logger.error(f"Error handling message: {e}")
                 
             except Exception as e:
-                self.logger.error(f"WebSocket connection error: {e}", exc_info=True)
+                logger.error(f"❌ WebSocket connection error: {e}")
                 self.connected = False
                 self._connection_event.clear()
-            
-            self.logger.debug("Waiting 5 seconds before reconnection attempt")
-            await asyncio.sleep(5)
+                
+                logger.info("Reconnecting in 5 seconds...")
+                await asyncio.sleep(5)
 
     async def disconnect(self) -> None:
         """Disconnect from the WebSocket server."""
@@ -82,14 +80,17 @@ class WebSocketManager:
         """Handle incoming WebSocket messages."""
         try:
             data = json.loads(message)
+            # Only log debug info if explicitly enabled
+            if config['DEBUG_WEBSOCKET']:
+                logger.debug(f"Raw WebSocket message: {json.dumps(data, indent=2)}")
             
             # Process payment data
             await self.payment_processor.process_payment(data)
             
         except json.JSONDecodeError:
-            logger.error(f"Failed to parse message: {message}")
+            logger.error(f"Failed to parse WebSocket message")
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
+            logger.error(f"Error handling WebSocket message: {e}")
 
     async def broadcast(self, message: str) -> None:
         """Broadcast a message to all connected clients."""

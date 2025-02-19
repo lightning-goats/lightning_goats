@@ -32,16 +32,18 @@ class PaymentProcessor:
             payment_amount_msats = payment.get('amount', 0)
             sats_received = payment_amount_msats // 1000
             
-            # Update balance - wallet_balance is already in sats
             async with self.lock:
                 self.balance = payment_data.get('wallet_balance', 0)
             
-            logger.info("\n=== Payment Received ===")
-            logger.info(f"Amount: {sats_received} sats")
-            logger.info(f"Balance: {self.balance} sats")
-            logger.info("=====================\n")
-
+            # Only log actual payments, not zero amounts
             if sats_received > 0:
+                logger.info("\n🌟 Payment Received 🌟")
+                logger.info(f"Amount: {sats_received} sats")
+                logger.info(f"New Balance: {self.balance} sats")
+                logger.info(f"Trigger Amount: {TRIGGER_AMOUNT_SATS} sats")
+                logger.info(f"Remaining: {max(0, TRIGGER_AMOUNT_SATS - self.balance)} sats needed")
+                logger.info("=" * 40)
+                
                 await self._handle_received_payment(sats_received, payment)
 
         except Exception as e:
@@ -54,19 +56,18 @@ class PaymentProcessor:
             # Update goat sats counter
             await self.external_api.update_goat_sats(sats_received)
             
-            # Calculate remaining sats needed for feeder trigger
             async with self.lock:
                 difference = TRIGGER_AMOUNT_SATS - self.balance
                 
                 if not await self.external_api.get_feeder_status():
                     if self.balance >= TRIGGER_AMOUNT_SATS:
                         logger.info("\n🔔 TRIGGERING FEEDER 🔔")
+                        logger.info("=" * 40)
                         if config['DEBUG']:
-                            logger.info(f"Would trigger feeder and reset balance of {self.balance} sats")
+                            logger.info(f"DEBUG MODE: Would trigger feeder (balance: {self.balance} sats)")
                         else:
                             await self._trigger_feeder_and_notify(sats_received)
                     elif sats_received >= 10:
-                        logger.info(f"Need {difference} more sats to trigger feeder")
                         message, _ = await self.messaging.make_messages(
                             config['NOS_SEC'],
                             sats_received,
@@ -75,7 +76,7 @@ class PaymentProcessor:
                         )
                         await self.notifier.broadcast(message)
                 else:
-                    logger.info("Feeder override is ON - skipping feeder trigger")
+                    logger.info("⚠️ Feeder override is ON - skipping feeder trigger")
 
         except Exception as e:
             logger.error(f"Error handling payment: {e}", exc_info=True)

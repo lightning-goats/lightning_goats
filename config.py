@@ -12,8 +12,8 @@ DEBUG_WEBSOCKET = os.getenv('DEBUG_WEBSOCKET', 'false').lower() == 'true'
 
 # Logging Configuration
 logging.basicConfig(
-    level=logging.INFO,  # Changed from DEBUG to INFO as default
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',  # Simplified format
     handlers=[
         logging.StreamHandler()
     ]
@@ -24,6 +24,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('aiosqlite').setLevel(logging.WARNING)
 logging.getLogger('websockets').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -116,12 +117,12 @@ config.update({
 })
 
 if DEBUG:
-    # Only show important debug messages
-    logger.info("Running in DEBUG mode:")
+    logger.info("\n=== Debug Mode Active ===")
     if DEBUG_NOSTR:
-        logger.info("- Nostr commands (nak) disabled")
+        logger.info("🔕 Nostr commands disabled")
     if DEBUG_WEBSOCKET:
-        logger.info("- WebSocket messages suppressed")
+        logger.info("🔍 WebSocket debug logging enabled")
+    logger.info("=" * 22 + "\n")
     logger.debug("nak commands and websocket messages are disabled in debug mode")
     logger.debug("Configuration loaded with:")
     logger.debug(f"MAX_HERD_SIZE: {MAX_HERD_SIZE}")
