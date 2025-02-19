@@ -78,8 +78,8 @@ class MessagingService:
         if not command:
             return None
 
-        if config['DEBUG']:
-            logger.debug(f"DEBUG mode - suppressing nak command: {command}")
+        if config['DEBUG_NOSTR']:
+            logger.debug(f"DEBUG_NOSTR mode - suppressing nak command: {command}")
             return None
 
         logger.info(f"Executing command: {command}")
@@ -101,11 +101,34 @@ class MessagingService:
         cyber_herd_item: Dict = None,
         spots_remaining: int = 0,
     ) -> Tuple[str, Optional[str]]:
-        """Generate appropriate messages based on event type."""
+        """Generate messages based on event type."""
+        # Generate user-friendly message
+        message = await self._generate_user_message(
+            event_type, new_amount, difference, cyber_herd_item, spots_remaining
+        )
+        
+        # Only generate Nostr command if not in debug mode
+        command_output = None
+        if not config['DEBUG_NOSTR']:
+            command_output = await self._generate_nostr_command(
+                event_type, message, new_amount, nos_sec, cyber_herd_item
+            )
+
+        return message, command_output
+
+    async def _generate_user_message(
+        self,
+        event_type: str,
+        new_amount: int,
+        difference: int,
+        cyber_herd_item: Optional[Dict] = None,
+        spots_remaining: int = 0
+    ) -> str:
+        """Generate user-friendly message."""
         message_templates = self.MESSAGE_TYPES.get(event_type)
         if not message_templates:
             logger.error(f"Event type '{event_type}' not recognized.")
-            return "Event type not recognized.", None
+            return "Event type not recognized."
 
         template = random.choice(list(message_templates.values()))
         
@@ -115,24 +138,42 @@ class MessagingService:
         }
 
         if event_type in ["sats_received", "feeder_triggered"]:
-            return await self._handle_regular_message(template, new_amount, difference)
+            return await self._handle_regular_message(
+                template,
+                new_amount,
+                difference,
+                cyber_herd_item,
+                spots_remaining
+            )
         elif event_type in handlers:
             return await handlers[event_type](
                 template=template,
                 cyber_herd_item=cyber_herd_item,
-                new_amount=new_amount if event_type == "cyber_herd_treats" else None,
+                new_amount=new_amount,
                 difference=difference,
                 spots_remaining=spots_remaining
             )
         else:
-            return template.format(new_amount=0, goat_name="", difference_message=""), None
+            return template.format(new_amount=0, goat_name="", difference_message="")
+
+    async def _generate_nostr_command(self, event_type: str, message: str, *args, **kwargs) -> Optional[str]:
+        """Generate Nostr command."""
+        if event_type in ["sats_received", "feeder_triggered"]:
+            return await self._generate_regular_nostr_command(message, *args, **kwargs)
+        elif event_type == "cyber_herd":
+            return await self._generate_cyber_herd_nostr_command(message, *args, **kwargs)
+        elif event_type == "cyber_herd_treats":
+            return await self._generate_treats_nostr_command(message, *args, **kwargs)
+        return None
 
     async def _handle_regular_message(
         self,
         template: str,
         new_amount: int,
-        difference: int
-    ) -> Tuple[str, Optional[str]]:
+        difference: int,
+        cyber_herd_item: Optional[Dict] = None,
+        spots_remaining: int = 0
+    ) -> str:
         """Handle regular message generation (sats received, feeder triggered)."""
         selected_goats = self.get_random_goat_names(self.goat_names)
         goat_names = [name for name, _, _ in selected_goats]
@@ -151,6 +192,19 @@ class MessagingService:
         if nprofile and nprofile in message:
             message = message.replace(nprofile, goat_names[0])
 
+        return message
+
+    async def _generate_regular_nostr_command(
+        self,
+        message: str,
+        new_amount: int,
+        nos_sec: str,
+        *args, **kwargs
+    ) -> Optional[str]:
+        """Generate Nostr command for regular messages."""
+        selected_goats = self.get_random_goat_names(self.goat_names)
+        _, _, pubkey = selected_goats[0]
+
         command = None
         if pubkey:
             command = (
@@ -159,7 +213,7 @@ class MessagingService:
                 f'{" ".join(DEFAULT_RELAYS)}'
             )
 
-        return message, command
+        return command
 
     async def _handle_cyber_herd_message(
         self, 
@@ -167,7 +221,7 @@ class MessagingService:
         cyber_herd_item: Dict,
         difference: float,
         spots_remaining: int
-    ) -> Tuple[str, Optional[str]]:
+    ) -> str:
         """Handle CyberHerd specific message generation."""
         display_name = cyber_herd_item.get("display_name", "anon")
         event_id = cyber_herd_item.get("event_id", "")
@@ -188,6 +242,23 @@ class MessagingService:
         )
         message = f"{message} {spots_info}".strip()
 
+        if nprofile and nprofile in message:
+            message = message.replace(nprofile, display_name)
+
+        return message
+
+    async def _generate_cyber_herd_nostr_command(
+        self,
+        message: str,
+        new_amount: int,
+        nos_sec: str,
+        cyber_herd_item: Dict,
+        *args, **kwargs
+    ) -> Optional[str]:
+        """Generate Nostr command for CyberHerd messages."""
+        event_id = cyber_herd_item.get("event_id", "")
+        pub_key = cyber_herd_item.get("pubkey", "")
+
         command = (
             f'/usr/local/bin/nak event --sec {config["NOS_SEC"]} -c "{message}" '
             f'--tag e="{event_id};{DEFAULT_RELAYS[0]};root" '
@@ -195,10 +266,7 @@ class MessagingService:
             f'{" ".join(DEFAULT_RELAYS)}'
         )
 
-        if nprofile and nprofile in message:
-            message = message.replace(nprofile, display_name)
-
-        return message, command
+        return command
 
     async def _handle_treats_message(
         self,
@@ -206,7 +274,7 @@ class MessagingService:
         cyber_herd_item: Dict,
         new_amount: int,
         difference: int
-    ) -> Tuple[str, Optional[str]]:
+    ) -> str:
         """Handle CyberHerd treats message generation."""
         display_name = cyber_herd_item.get("display_name", "anon")
         pub_key = cyber_herd_item.get("pubkey", "")
@@ -223,9 +291,23 @@ class MessagingService:
         if nprofile and nprofile in message:
             message = message.replace(nprofile, display_name)
 
+        return message
+
+    async def _generate_treats_nostr_command(
+        self,
+        message: str,
+        new_amount: int,
+        nos_sec: str,
+        cyber_herd_item: Dict,
+        *args, **kwargs
+    ) -> Optional[str]:
+        """Generate Nostr command for CyberHerd treats messages."""
+        event_id = cyber_herd_item.get("event_id", "")
+        pub_key = cyber_herd_item.get("pubkey", "")
+
         command = self._build_nostr_command(message, pub_key, event_id)
 
-        return message, command
+        return command
 
     async def initialize_messages(self):
         """Initialize any message-related resources."""

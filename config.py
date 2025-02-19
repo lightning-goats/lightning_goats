@@ -5,6 +5,8 @@ import logging
 # Load .env file first to get DEBUG setting
 load_dotenv()
 DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
+DEBUG_NOSTR = os.getenv('DEBUG_NOSTR', DEBUG).lower() == 'true'
+DEBUG_WEBSOCKET = os.getenv('DEBUG_WEBSOCKET', 'false').lower() == 'true'
 
 # Logging Configuration
 logging.basicConfig(
@@ -27,16 +29,17 @@ def load_env_vars(required_vars):
 REQUIRED_ENV_VARS = [
     'OH_AUTH_1', 'HERD_KEY', 'SAT_KEY', 'NOS_SEC', 'HEX_KEY', 
     'CYBERHERD_KEY', 'LNBITS_URL', 'OPENHAB_URL', 'HERD_WEBSOCKET',
-    'PREDEFINED_WALLET_ADDRESS', 'PREDEFINED_WALLET_ALIAS'
+    'PREDEFINED_WALLET_ADDRESS', 'PREDEFINED_WALLET_ALIAS',
+    'MAX_HERD_SIZE', 'PREDEFINED_WALLET_PERCENT_RESET', 'TRIGGER_AMOUNT_SATS'
 ]
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./lightning_goats.db")
 
-# Constants
-MAX_HERD_SIZE = 100
-PREDEFINED_WALLET_PERCENT_RESET = 100
-TRIGGER_AMOUNT_SATS = 10
+# Constants (now from environment)
+MAX_HERD_SIZE = int(os.getenv('MAX_HERD_SIZE', 10))
+PREDEFINED_WALLET_PERCENT_RESET = int(os.getenv('PREDEFINED_WALLET_PERCENT_RESET', 100))
+TRIGGER_AMOUNT_SATS = int(os.getenv('TRIGGER_AMOUNT_SATS', 1000))
 
 # Goat names and profiles configuration
 GOAT_NAMES_DICT = {
@@ -95,9 +98,20 @@ config.update({
     'MAX_CONCURRENT_SUBPROCESSES': int(os.getenv('MAX_CONCURRENT_SUBPROCESSES', 10)),
     'MAX_CONCURRENT_HTTP_REQUESTS': int(os.getenv('MAX_CONCURRENT_HTTP_REQUESTS', 20)),
     'NIP05_VERIFICATION': os.getenv('NIP05_VERIFICATION', 'true').lower() == 'true',
-    'DEBUG': DEBUG
+    'DEBUG': DEBUG,
+    'DEBUG_NOSTR': DEBUG_NOSTR,
+    'DEBUG_WEBSOCKET': DEBUG_WEBSOCKET,
+    'MAX_HERD_SIZE': MAX_HERD_SIZE,
+    'PREDEFINED_WALLET_PERCENT_RESET': PREDEFINED_WALLET_PERCENT_RESET,
+    'TRIGGER_AMOUNT_SATS': TRIGGER_AMOUNT_SATS,
 })
 
 if DEBUG:
-    logger.debug("Running in DEBUG mode - debug logging enabled")
+    logger.debug("Running in DEBUG mode:")
+    logger.debug(f"- DEBUG_NOSTR: {DEBUG_NOSTR} (Nostr commands disabled)")
+    logger.debug(f"- DEBUG_WEBSOCKET: {DEBUG_WEBSOCKET} (WebSocket messages suppressed)")
     logger.debug("nak commands and websocket messages are disabled in debug mode")
+    logger.debug("Configuration loaded with:")
+    logger.debug(f"MAX_HERD_SIZE: {MAX_HERD_SIZE}")
+    logger.debug(f"TRIGGER_AMOUNT_SATS: {TRIGGER_AMOUNT_SATS}")
+    logger.debug(f"PREDEFINED_WALLET_PERCENT_RESET: {PREDEFINED_WALLET_PERCENT_RESET}")

@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
 import asyncio
+import os
+from pathlib import Path
 
 from routes import main_router
 from services.websocket_manager import WebSocketManager
@@ -14,6 +17,18 @@ from services.cache_manager import CacheManager
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Create static directory if it doesn't exist
+static_path = os.path.join(os.path.dirname(__file__), "static")
+Path(static_path).mkdir(parents=True, exist_ok=True)
+
+# Mount static directory
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+# Add favicon route
+@app.get("/favicon.ico")
+async def favicon():
+    return await app.send_file("static/favicon.ico")
 
 # CORS middleware
 app.add_middleware(
@@ -58,14 +73,20 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # Disconnect from database
-    await _db.disconnect()
-    
-    # Close WebSocket connection
-    await websocket_manager.disconnect()
-    
-    # Close external API client
-    await _external_api.close()
+    """Cleanup resources on shutdown."""
+    try:
+        # Disconnect from database
+        await _db.disconnect()
+        
+        # Close WebSocket connection
+        await websocket_manager.disconnect()
+        
+        # Close external API client
+        await _external_api.close()
+        
+        logger.info("Cleanup completed successfully")
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

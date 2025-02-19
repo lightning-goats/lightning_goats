@@ -6,6 +6,7 @@ from config import config, TRIGGER_AMOUNT_SATS
 from services.external_api import ExternalAPIService
 from services.notifier import NotifierService
 from services.database import DatabaseService
+from services.messaging_service import MessagingService
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class PaymentProcessor:
         self.notifier = notifier
         self.database = database
         self.balance = 0
+        self.messaging = MessagingService()
 
     async def process_payment(self, payment_data: Dict):
         """Process incoming payment data from websocket."""
@@ -40,43 +42,42 @@ class PaymentProcessor:
                 logger.debug(f"Wallet balance: {wallet_balance}, Updated balance: {self.balance}")
 
             if sats_received > 0:
-                await self.handle_payment_received(sats_received, payment)
+                # Only handle payment logic, don't broadcast raw payment data
+                await self._handle_received_payment(sats_received, payment)
 
         except Exception as e:
             logger.error(f"Error processing payment data: {e}", exc_info=True)
             raise
 
-    async def handle_payment_received(self, sats_received: int, payment: Dict):
-        """Handle received payment and its side effects."""
+    async def _handle_received_payment(self, sats_received: int, payment: Dict):
+        """Handle payment processing and notifications."""
         try:
             # Update goat sats counter
             await self.external_api.update_goat_sats(sats_received)
             
-            nostr_data = self.extract_nostr_data(payment)
-            feeder_triggered = False
+            # Calculate difference for notification
+            difference = TRIGGER_AMOUNT_SATS - self.balance
             
-            if nostr_data and sats_received >= 10:
-                await self.handle_nostr_payment(nostr_data, sats_received)
-
-            if sats_received > 0 and not await self.external_api.get_feeder_status():
+            if not await self.external_api.get_feeder_status():
                 if self.balance >= TRIGGER_AMOUNT_SATS:
-                    feeder_triggered = await self.trigger_feeder_and_reset(sats_received)
-
-                if not feeder_triggered:
-                    difference = TRIGGER_AMOUNT_SATS - self.balance
-                    if sats_received >= 10:
-                        await self.notifier.send_sats_received_notification(
-                            sats_received=sats_received,
-                            difference=difference
-                        )
+                    await self._trigger_feeder_and_notify(sats_received)
+                elif sats_received >= 10:
+                    # Send formatted notification for regular payment
+                    message, _ = await self.messaging.make_messages(
+                        config['NOS_SEC'],
+                        sats_received,
+                        difference,
+                        "sats_received"
+                    )
+                    await self.notifier.broadcast(message)
             else:
-                logger.info("Feeder override is ON or payment amount is non-positive")
+                logger.info("Feeder override is ON")
 
         except Exception as e:
             logger.error(f"Error handling payment: {e}", exc_info=True)
             raise
 
-    def extract_nostr_data(self, payment: Dict) -> Optional[Dict]:
+    def _extract_nostr_data(self, payment: Dict) -> Optional[Dict]:
         """Extract and validate Nostr data from payment."""
         try:
             nostr_data_raw = payment.get('extra', {}).get('nostr')
@@ -88,23 +89,37 @@ class PaymentProcessor:
             logger.error(f"Error extracting Nostr data: {e}")
         return None
 
-    async def trigger_feeder_and_reset(self, sats_received: int) -> bool:
-        """Trigger feeder and reset wallet if successful."""
+    async def _trigger_feeder_and_notify(self, sats_received: int) -> bool:
+        """Trigger feeder and send notifications."""
         if await self.external_api.trigger_feeder():
             logger.info("Feeder triggered successfully")
             
-            await self.notifier.send_feeder_notification(sats_received)
+            message, _ = await self.messaging.make_messages(
+                config['NOS_SEC'],
+                sats_received,
+                0,
+                "feeder_triggered"
+            )
+            await self.notifier.broadcast(message)
             
             # Reset wallet
-            status = await self.external_api.pay_invoice(
-                await self.external_api.create_invoice(
-                    amount=self.balance,
-                    memo='Reset Herd Wallet',
-                    key=config['HERD_KEY']
-                ),
-                key=config['HERD_KEY']
-            )
-            
+            await self._reset_wallet()
             return True
             
         return False
+
+    async def _reset_wallet(self):
+        """Reset the wallet by creating and paying an invoice."""
+        try:
+            payment_request = await self.external_api.create_invoice(
+                amount=self.balance,
+                memo='Reset Herd Wallet',
+                key=config['HERD_KEY']
+            )
+            await self.external_api.pay_invoice(
+                payment_request=payment_request,
+                key=config['HERD_KEY']
+            )
+            logger.info(f"Wallet reset successful. Amount: {self.balance}")
+        except Exception as e:
+            logger.error(f"Error resetting wallet: {e}")

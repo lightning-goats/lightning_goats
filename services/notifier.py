@@ -24,12 +24,17 @@ class NotifierService:
 
         if self.connected_clients:
             logger.info(f"Broadcasting message to {len(self.connected_clients)} clients: {message}")
+            failed_clients = []
             for client in self.connected_clients.copy():
                 try:
                     await client.send_text(message)
                 except Exception as e:
                     logger.warning(f"Failed to send message to client: {e}")
-                    self.connected_clients.remove(client)
+                    failed_clients.append(client)
+
+            # Remove failed clients
+            for client in failed_clients:
+                self.connected_clients.remove(client)
         else:
             logger.debug("No connected clients to send messages to.")
 

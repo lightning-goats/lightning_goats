@@ -82,45 +82,41 @@ class WebSocketManager:
         """Handle incoming WebSocket messages."""
         try:
             if config['DEBUG']:
-                self.logger.debug(f"Processing WebSocket message: {message}")
+                logger.debug(f"Received WebSocket message: {message}")
             
             data = json.loads(message)
-            # Process payment data first
+            
+            # Process payment data but don't broadcast the raw message
             await self.payment_processor.process_payment(data)
             
-            # Then broadcast to clients if needed
-            await self.broadcast(message)
-            
             if config['DEBUG']:
-                self.logger.debug("Successfully processed and broadcasted message")
+                logger.debug("Successfully processed payment message")
+                
         except json.JSONDecodeError:
-            self.logger.error(f"Failed to parse message: {message}")
+            logger.error(f"Failed to parse message: {message}")
         except Exception as e:
-            self.logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.error(f"Error handling message: {e}", exc_info=True)
 
     async def broadcast(self, message: str) -> None:
         """Broadcast a message to all connected clients."""
         if config['DEBUG']:
-            self.logger.debug(f"DEBUG mode - suppressing broadcast message: {message}")
-            return
-
+            logger.debug(f"Broadcasting formatted message: {message}")
+            
         if not self.clients:
-            self.logger.debug("No clients connected to broadcast message")
+            logger.debug("No clients connected to broadcast message")
             return
 
-        self.logger.debug(f"Broadcasting message to {len(self.clients)} clients: {message}")
         failed_clients = []
         for client in self.clients.copy():
             try:
                 await client.send_text(message)
             except Exception as e:
-                self.logger.error(f"Error broadcasting to client: {e}", exc_info=True)
+                logger.error(f"Error broadcasting to client: {e}", exc_info=True)
                 failed_clients.append(client)
 
         # Remove failed clients
         for client in failed_clients:
             self.clients.remove(client)
-            self.logger.debug(f"Removed failed client, remaining clients: {len(self.clients)}")
 
     async def register(self, websocket: WebSocket) -> None:
         """Register a new client connection."""
