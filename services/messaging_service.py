@@ -103,27 +103,33 @@ class MessagingService:
         spots_remaining: int = 0,
     ) -> Tuple[str, Optional[str]]:
         """Generate messages based on event type."""
-        logger.info(f"Generating message for event type: {event_type}")
-        logger.info(f"Amount: {new_amount} sats, Difference: {difference} sats")
-        
-        # Generate user-friendly message
         message = await self._generate_user_message(
             event_type, new_amount, difference, cyber_herd_item, spots_remaining
         )
         
-        # Only generate Nostr command for non-informational messages and when not in debug mode
         command_output = None
-        if event_type != "interface_info" and not config['DEBUG_NOSTR']:
+        if not config['DEBUG_NOSTR']:
             command_output = await self._generate_nostr_command(
                 event_type, message, new_amount, nos_sec, cyber_herd_item
             )
-            logger.info("Nostr command generated")
-        elif event_type != "interface_info" and config['DEBUG_NOSTR']:
-            logger.info("Nostr commands disabled in DEBUG mode")
-        else:
-            logger.info("Informational message - skipping Nostr command")
+        elif event_type != "interface_info":
+            logger.info("💬 [Nostr Disabled] Message would be sent to Nostr")
 
-        logger.info(f"Generated message: {message}")
+        # Log message details based on event type
+        if event_type == "sats_received":
+            logger.info("\n💌 User Message Generated")
+            logger.info(f"Type: Payment Received")
+            logger.info(f"Message: {message}")
+            logger.info("=" * 40)
+        elif event_type == "feeder_triggered":
+            logger.info("\n🎉 Feeder Message Generated")
+            logger.info(f"Message: {message}")
+            logger.info("=" * 40)
+        elif event_type == "cyber_herd":
+            logger.info("\n🐐 CyberHerd Message Generated")
+            logger.info(f"Message: {message}")
+            logger.info("=" * 40)
+
         return message, command_output
 
     async def _generate_user_message(

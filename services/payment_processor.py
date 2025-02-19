@@ -61,10 +61,12 @@ class PaymentProcessor:
                 
                 if not await self.external_api.get_feeder_status():
                     if self.balance >= TRIGGER_AMOUNT_SATS:
-                        logger.info("\n🔔 TRIGGERING FEEDER 🔔")
+                        logger.info("\n🔔 FEEDER TRIGGER ACTIVATED 🔔")
+                        logger.info(f"Current Balance: {self.balance} sats")
                         logger.info("=" * 40)
+                        
                         if config['DEBUG']:
-                            logger.info(f"DEBUG MODE: Would trigger feeder (balance: {self.balance} sats)")
+                            logger.info("DEBUG MODE: Feeder trigger simulated")
                         else:
                             await self._trigger_feeder_and_notify(sats_received)
                     elif sats_received >= 10:
@@ -76,7 +78,9 @@ class PaymentProcessor:
                         )
                         await self.notifier.broadcast(message)
                 else:
-                    logger.info("⚠️ Feeder override is ON - skipping feeder trigger")
+                    logger.info("\n⚠️ Feeder Override Active")
+                    logger.info("Skipping feeder trigger")
+                    logger.info("=" * 40)
 
         except Exception as e:
             logger.error(f"Error handling payment: {e}", exc_info=True)
